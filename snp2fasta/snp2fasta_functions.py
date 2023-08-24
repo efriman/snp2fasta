@@ -25,16 +25,16 @@ def slice_str(string, start, end):
     stringout = string[start: end]
     return stringout
 
-def process_snp_fasta_table(data):
+def process_snp_fasta_table(data, ignore_char="-"):
     data["seq"] = data["seq"].str.lower()
     data['ref_pos'] = data.apply(lambda x: slice_str(x["seq"], 
                                                      x['snp_pos'], 
                                                      x['snp_pos']+x["ref_length"]), 
                                  axis=1)
-    data["alt"] = np.where(data["ref"] == "-",
+    data["alt"] = np.where(data["ref"] == ignore_char,
                              data['ref_pos'].str.upper() + data['alt'],
                              data['alt'])
-    data["ref"] = np.where(data["ref"] == "-",
+    data["ref"] = np.where(data["ref"] == ignore_char,
                              data['ref_pos'].str.upper(),
                              data['ref'])
     data["ref_mismatch"] = np.where(data["ref"].str.lower() != data["ref_pos"], True, False) 

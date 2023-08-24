@@ -15,6 +15,7 @@ Requires pysam, which in some cases may need to be installed separately using `c
 `snp2fasta input_table.txt --flank 5 --fasta reference_genome.fa --outname test`
 
 By default, character "-" is treated as deletion. Can be changed with `--ignore_char`
+By default, both ends of ref and alt are trimmed for insertions so that the length does not exceed 2*flank. Can be unset with `--no_trim`
 
 ## Example inputs and output
 input_table.bed

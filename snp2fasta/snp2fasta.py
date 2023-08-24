@@ -52,6 +52,13 @@ def parse_args_overlap_peaks():
         required=False,
         help="""Character used to signify deletions""",
     )
+    parser.add_argument(
+        "--no_trim",
+        action="store_true",
+        default=False,
+        required=False,
+        help="""Set to not trim the ends to maintain a maximum size of 2*flank""",
+    )
     return parser
     
 def main():
@@ -62,7 +69,7 @@ def main():
 
     data = pd.read_table(args.input_table)
     
-    flank = 85
+    flank = args.flank
     
     header_cols = data.columns
     
@@ -72,7 +79,7 @@ def main():
     
     snp["seq"] = snp.apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
     
-    snp = process_snp_fasta_table(snp)
+    snp = process_snp_fasta_table(snp, ignore_char=args.ignore_char)
     
     snp_mismatch = snp.loc[snp["ref_mismatch"]].reset_index(drop=True)
     
@@ -88,8 +95,9 @@ def main():
                                                                  x["ref_length"], 
                                                                  x["alt"], 
                                                                  ignore_char=args.ignore_char), axis=1)
-    
-    snp_match[['seq', 'seq_alt']] = snp_match.apply(lambda x: trim_strings(x["seq"], x['seq_alt'], flank*2), axis=1, result_type="expand")
+
+    if not args.no_trim:    
+        snp_match[['seq', 'seq_alt']] = snp_match.apply(lambda x: trim_strings(x["seq"], x['seq_alt'], flank*2), axis=1, result_type="expand")
     
     snp_match["fasta"] = snp_match.apply(lambda x: series_to_fasta(x, header_cols=header_cols), axis=1)
     
