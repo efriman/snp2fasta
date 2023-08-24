@@ -45,7 +45,13 @@ def parse_args_overlap_peaks():
         required=False,
         help="""Directory to save in. Defaults to current""",
     )
-
+    parser.add_argument(
+        "--ignore_char",
+        type=str,
+        default="-",
+        required=False,
+        help="""Character used to signify deletions""",
+    )
     return parser
     
 def main():
@@ -77,7 +83,11 @@ def main():
     
     snp_match = snp.loc[~snp["ref_mismatch"]].reset_index(drop=True)
     
-    snp_match['seq_alt'] = snp_match.apply(lambda x: replace_str(x["seq"], x['snp_pos'], x["ref_length"], x["alt"]), axis=1)
+    snp_match['seq_alt'] = snp_match.apply(lambda x: replace_str(x["seq"], 
+                                                                 x['snp_pos'], 
+                                                                 x["ref_length"], 
+                                                                 x["alt"], 
+                                                                 ignore_char=args.ignore_char), axis=1)
     
     snp_match[['seq', 'seq_alt']] = snp_match.apply(lambda x: trim_strings(x["seq"], x['seq_alt'], flank*2), axis=1, result_type="expand")
     
