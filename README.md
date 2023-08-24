@@ -22,11 +22,19 @@ input_table.bed
 | chr2  | 10  | C | T |
 
 test_matched.fa
-">chr1_1_A"
+
+\>chr1_1_A
+
 atgataatgat
-">chr1_1_G"
+
+\>chr1_1_G
+
 atgatGatgat
-">chr2_10_C"
+
+\>chr2_10_C
+
 ctagccgtacg
-">chr2_10_T"
-"ctagcTgtacg"
+
+\>chr2_10_T
+
+ctagcTgtacg
