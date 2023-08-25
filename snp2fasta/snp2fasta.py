@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-import pandas as pd
-import numpy as np
-import pysam
 from snp2fasta.snp2fasta_functions import *
 import argparse
 import logging
@@ -46,6 +43,13 @@ def parse_args_overlap_peaks():
         help="""Directory to save in. Defaults to current""",
     )
     parser.add_argument(
+        "--combinations",
+        type=int,
+        default=1,
+        required=False,
+        help="""Specify >1 to generate up to this number of allele combinations when SNPs are within flank""",
+    )
+    parser.add_argument(
         "--ignore_char",
         type=str,
         default="-",
@@ -83,10 +87,10 @@ def main():
     
     snp_mismatch = snp.loc[snp["ref_mismatch"]].reset_index(drop=True)
     
-    print(f"{snp_mismatch.shape[0]} mismatched reference alleles compared to genome sequence")
+    logging.info(f"{snp_mismatch.shape[0]} mismatched reference alleles compared to genome sequence")
     if not snp_mismatch.empty:
-        snp_mismatch.to_csv(f"{args.outname}_mismatched_refs.txt", sep="\t", index=False)
-        print(f"Saved as {args.outname}_mismatched.txt")
+        snp_mismatch.to_csv(f"{args.outdir}/{args.outname}_mismatched_refs.txt", sep="\t", index=False)
+        logging.info(f"Saved as {args.outdir}/{args.outname}_mismatched.txt")
     
     snp_match = snp.loc[~snp["ref_mismatch"]].reset_index(drop=True)
     
@@ -103,11 +107,30 @@ def main():
     
     fasta_out = "".join(snp_match["fasta"])
     
-    text_file = open(f"{args.outname}_matched.fa", "w")
+    text_file = open(f"{args.outdir}/{args.outname}_matched.fa", "w")
     text_file.write(fasta_out)
     text_file.close()
     
-    print(f"Saved {snp_match.shape[0]} entries as {args.outname}_matched.fa")
+    logging.info(f"Saved {snp_match.shape[0]} entries as {args.outdir}/{args.outname}_matched.fa")
+
+    if args.combinations > 1:
+        closest = snp_match[header_cols]
+        closest = extract_closest(closest, flank=args.flank, k=(args.combinations))
+        closest["seq"] = closest.rename(columns=lambda x: re.sub('1','',x)).apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
+        closest["seq"] = closest["seq"].str.lower()
+        closest["id"] = closest["chrom1"] + "_" + closest["start1"].astype(str) + "_" + closest["alt1"]
+        ncomb = len(closest["id"].unique())
+        logging.info(f"{ncomb} instances of up to {args.combinations} combinations within the flanking distance")
+        fasta_comb = ""
+        for id in closest["id"].unique():
+            fa_id = extract_combinations_fasta(closest[closest["id"] == id], flank=args.flank, trim=not args.no_trim)
+            fasta_comb = f"{fasta_comb}{fa_id}"
+    
+    text_file = open(f"{args.outdir}/{args.outname}_combinations.fa", "w")
+    text_file.write(fasta_comb)
+    text_file.close()
+    
+    logging.info(f"Saved combinations as {args.outdir}/{args.outname}_combinations.fa")
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,9 @@
 import numpy as np
+import pandas as pd
+import bioframe
+import re
+import pysam
+import itertools
 
 def preprocess_snp_table(snp, flank):
     if not set(["chrom", "start", "ref", "alt"]).issubset(snp.columns):
@@ -71,3 +76,49 @@ def series_to_fasta(series, header_cols):
         refalt = "ref" if seq == "seq" else "alt"
         fasta = fasta + f"{header}_{series[refalt]}\n{series[seq]}\n"
     return fasta
+
+def extract_closest(df, flank, k):
+    closest = bioframe.closest(df, df.copy(), k=k, suffixes=["1", "2"], ignore_upstream=True)
+    closest = closest[~((closest["distance"] == 0) & 
+                      (closest["start1"] == closest["start2"]) &
+                      (closest["alt1"] == closest["alt2"])) &
+                      (closest["distance"] < flank)].reset_index(drop=True)
+    closest["maxstart"] = closest.groupby(["chrom1", "start1", "ref1"])["start2"].transform("max")
+    closest["center"] = np.ceil((closest["start1"] + closest["maxstart"])/2).astype(int)
+    closest["flank_start"] = closest["center"] - flank
+    closest["flank_end"] = closest["center"] + flank
+    return closest
+
+def extract_combinations_fasta(df, flank, trim=True):
+    if len(df["seq"].unique()) > 1:
+        raise ValueError("Non-unique sequences in DataFrame")
+    df = df.reset_index(drop=True)
+    flank_start = df.loc[0,"flank_start"]
+    sequence = df.loc[0, "seq"]
+    df2 = pd.concat([df[["chrom1","start1", "end1", "ref1", "alt1", "rsID1", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('1','',x)), 
+                     df[["chrom2","start2", "end2", "ref2", "alt2", "rsID2", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('2','',x))]).reset_index(drop=True)
+    df2["pos"] = (df2["start"] - flank_start) - 1
+    df2["ref_length"] = df2.apply(lambda x: len(x["ref"]), axis=1)
+    positions = list(df2["pos"].astype(int))
+    length = df2.shape[0]
+    allele_combinations = itertools.product(*[df2[["ref", "alt"]].iloc[i].tolist() for i in range(length)])
+    reflengths = list(df2["ref_length"])
+    df2["coord"] = df2["chrom"] + "_" + df2["start"].astype(str)
+    coords = list(df2["coord"])
+    sequences = ""
+    insertion = 0
+    if trim:
+        df2["alt_length"] = df2.apply(lambda x: len(x["alt"]), axis=1)
+        insertions = np.array(df2["alt_length"] - df2["ref_length"])
+        insertion = int(np.ceil(insertions[insertions>0].sum()/2))
+    for rep in allele_combinations:
+        sequence_mod = sequence
+        header = ">"
+        for i in range(length):
+            pos = positions[i] + (len(sequence_mod)-2*flank)
+            sequence_mod = replace_str(sequence_mod, pos, reflengths[i], rep[i])
+            header = header + "_" + coords[i] + "_" + rep[i]
+        header = header.replace(">_", ">")
+        sequence_mod = sequence_mod[insertion:len(sequence_mod)-insertion]
+        sequences =  sequences + f"{header}\n{sequence_mod}\n"
+    return sequences
