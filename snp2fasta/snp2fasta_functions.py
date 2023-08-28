@@ -4,6 +4,7 @@ import bioframe
 import re
 import pysam
 import itertools
+import logging
 
 def preprocess_snp_table(snp, flank):
     if not set(["chrom", "start", "ref", "alt"]).issubset(snp.columns):
@@ -37,11 +38,11 @@ def process_snp_fasta_table(data, ignore_char="-"):
                                                      x['snp_pos']+x["ref_length"]), 
                                  axis=1)
     data["alt"] = np.where(data["ref"] == ignore_char,
-                             data['ref_pos'].str.upper() + data['alt'],
-                             data['alt'])
+                           data['ref_pos'].str.upper() + data['alt'],
+                           data['alt'])
     data["ref"] = np.where(data["ref"] == ignore_char,
-                             data['ref_pos'].str.upper(),
-                             data['ref'])
+                           data['ref_pos'].str.upper(),
+                           data['ref'])
     data["ref_mismatch"] = np.where(data["ref"].str.lower() != data["ref_pos"], True, False) 
     return data
 
@@ -77,13 +78,12 @@ def series_to_fasta(series, header_cols):
         fasta = fasta + f"{header}_{series[refalt]}\n{series[seq]}\n"
     return fasta
 
-def extract_closest(df, flank, k):
+def extract_closest(df, flank, maxdist, k):
     closest = bioframe.closest(df, df.copy(), k=k, suffixes=["1", "2"], ignore_upstream=True)
     closest = closest[~((closest["distance"] == 0) & 
-                      (closest["start1"] == closest["start2"]) &
-                      (closest["alt1"] == closest["alt2"])) &
-                      (closest["distance"] < flank)].reset_index(drop=True)
-    closest["maxstart"] = closest.groupby(["chrom1", "start1", "ref1"])["start2"].transform("max")
+                      (closest["start1"] == closest["start2"])) &
+                      (closest["distance"] < maxdist)].reset_index(drop=True)
+    closest["maxstart"] = closest.groupby(["chrom1", "start1", "ref1", "alt1"])["start2"].transform("max")
     closest["center"] = np.ceil((closest["start1"] + closest["maxstart"])/2).astype(int)
     closest["flank_start"] = closest["center"] - flank
     closest["flank_end"] = closest["center"] + flank
@@ -95,30 +95,40 @@ def extract_combinations_fasta(df, flank, trim=True):
     df = df.reset_index(drop=True)
     flank_start = df.loc[0,"flank_start"]
     sequence = df.loc[0, "seq"]
-    df2 = pd.concat([df[["chrom1","start1", "end1", "ref1", "alt1", "rsID1", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('1','',x)), 
-                     df[["chrom2","start2", "end2", "ref2", "alt2", "rsID2", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('2','',x))]).reset_index(drop=True)
+    df2 = pd.concat([df[["chrom1","start1", "end1", "ref1", "alt1", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('1','',x)), 
+                     df[["chrom2","start2", "end2", "ref2", "alt2", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('2','',x))]).reset_index(drop=True)
     df2["pos"] = (df2["start"] - flank_start) - 1
     df2["ref_length"] = df2.apply(lambda x: len(x["ref"]), axis=1)
     positions = list(df2["pos"].astype(int))
-    length = df2.shape[0]
-    allele_combinations = itertools.product(*[df2[["ref", "alt"]].iloc[i].tolist() for i in range(length)])
     reflengths = list(df2["ref_length"])
     df2["coord"] = df2["chrom"] + "_" + df2["start"].astype(str)
-    coords = list(df2["coord"])
-    sequences = ""
+    coords = list(df2["coord"])  
+    length = df2.shape[0]
     insertion = 0
     if trim:
         df2["alt_length"] = df2.apply(lambda x: len(x["alt"]), axis=1)
-        insertions = np.array(df2["alt_length"] - df2["ref_length"])
-        insertion = int(np.ceil(insertions[insertions>0].sum()/2))
+        sum_indels = int(np.ceil(np.array(df2["alt_length"] - df2["ref_length"]).sum()/2))
+        insertion = sum_indels if sum_indels > 0 else 0
+    sequences = ""
+    allele_combinations = itertools.product(*[df2[["ref", "alt"]].iloc[i].tolist() for i in range(length)])
     for rep in allele_combinations:
         sequence_mod = sequence
         header = ">"
+        skip = False
         for i in range(length):
-            pos = positions[i] + (len(sequence_mod)-2*flank)
+            pos = positions[i]
+            pos = pos + (len(sequence_mod)-2*flank)
+            if (i > 0) and (pos < positions[(i-1)]+reflengths[(i-i)]):
+                overlap = "_".join(df2.loc[(i-1), ["chrom", "start", "ref", "alt"]].astype(str))
+                overlap_with = "_".join(df2.loc[(i), ["chrom", "start", "ref", "alt"]].astype(str))
+                print(rep)
+                logging.info(f"Deletion for entry {overlap} overlaps with {overlap_with}, skipping combination")
+                skip = True
+                break
             sequence_mod = replace_str(sequence_mod, pos, reflengths[i], rep[i])
             header = header + "_" + coords[i] + "_" + rep[i]
-        header = header.replace(">_", ">")
-        sequence_mod = sequence_mod[insertion:len(sequence_mod)-insertion]
-        sequences =  sequences + f"{header}\n{sequence_mod}\n"
+        if not skip:
+            header = header.replace(">_", ">")
+            sequence_mod = sequence_mod[insertion:len(sequence_mod)-insertion]
+            sequences =  sequences + f"{header}\n{sequence_mod}\n"
     return sequences

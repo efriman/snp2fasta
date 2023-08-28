@@ -47,7 +47,13 @@ def parse_args_overlap_peaks():
         type=int,
         default=1,
         required=False,
-        help="""Specify >1 to generate up to this number of allele combinations when SNPs are within flank""",
+        help="""Specify >1 to generate up to this number of allele combinations when SNPs are within a certain distance""",
+    )
+    parser.add_argument(
+        "--maxdist",
+        type=int,
+        required=False,
+        help="""When using combinations, maximum distance between SNPs to combine. By default, uses flank""",
     )
     parser.add_argument(
         "--ignore_char",
@@ -93,6 +99,12 @@ def main():
         logging.info(f"Saved as {args.outdir}/{args.outname}_mismatched.txt")
     
     snp_match = snp.loc[~snp["ref_mismatch"]].reset_index(drop=True)
+
+    snp_match['seq'] = snp_match.apply(lambda x: replace_str(x["seq"], 
+                                                             x['snp_pos'], 
+                                                             x["ref_length"], 
+                                                             x["ref"], 
+                                                             ignore_char=args.ignore_char), axis=1)
     
     snp_match['seq_alt'] = snp_match.apply(lambda x: replace_str(x["seq"], 
                                                                  x['snp_pos'], 
@@ -114,23 +126,32 @@ def main():
     logging.info(f"Saved {snp_match.shape[0]} entries as {args.outdir}/{args.outname}_matched.fa")
 
     if args.combinations > 1:
+        if args.maxdist:
+            if args.maxdist > 2*args.flank:
+                raise ValueError(f"maxdist can't be more than 2*flank")
+            else:
+                maxdist = args.maxdist
+        else:
+            maxdist = args.flank
         closest = snp_match[header_cols]
-        closest = extract_closest(closest, flank=args.flank, k=(args.combinations))
+        closest = extract_closest(closest, flank=args.flank, maxdist=maxdist, k=(args.combinations))
         closest["seq"] = closest.rename(columns=lambda x: re.sub('1','',x)).apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
         closest["seq"] = closest["seq"].str.lower()
         closest["id"] = closest["chrom1"] + "_" + closest["start1"].astype(str) + "_" + closest["alt1"]
         ncomb = len(closest["id"].unique())
-        logging.info(f"{ncomb} instances of up to {args.combinations} combinations within the flanking distance")
+        logging.info(f"{ncomb} instances of up to {args.combinations} combinations within {maxdist} bp")
         fasta_comb = ""
         for id in closest["id"].unique():
             fa_id = extract_combinations_fasta(closest[closest["id"] == id], flank=args.flank, trim=not args.no_trim)
-            fasta_comb = f"{fasta_comb}{fa_id}"
+            for fa_entry in fa_id.split("\n"):
+                if fa_entry not in fasta_comb:
+                    fasta_comb = f"{fasta_comb}{fa_entry}\n"
     
-    text_file = open(f"{args.outdir}/{args.outname}_combinations.fa", "w")
-    text_file.write(fasta_comb)
-    text_file.close()
+        text_file = open(f"{args.outdir}/{args.outname}_combinations.fa", "w")
+        text_file.write(fasta_comb)
+        text_file.close()
     
-    logging.info(f"Saved combinations as {args.outdir}/{args.outname}_combinations.fa")
+        logging.info(f"Saved combinations as {args.outdir}/{args.outname}_combinations.fa")
 
 if __name__ == "__main__":
     main()
