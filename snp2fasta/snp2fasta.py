@@ -133,20 +133,29 @@ def main():
                 maxdist = args.maxdist
         else:
             maxdist = args.flank
-        closest = snp_match[header_cols]
-        closest = extract_closest(closest, flank=args.flank, maxdist=maxdist, k=(args.combinations))
-        closest["seq"] = closest.rename(columns=lambda x: re.sub('1','',x)).apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
-        closest["seq"] = closest["seq"].str.lower()
-        closest["id"] = closest["chrom1"] + "_" + closest["start1"].astype(str) + "_" + closest["alt1"]
-        ncomb = len(closest["id"].unique())
-        logging.info(f"{ncomb} instances of up to {args.combinations} combinations within {maxdist} bp")
+        sel = snp_match[["chrom", "start", "ref", "alt"]].copy()
+        sel["ref_length"] = sel.apply(lambda x: len(x["ref"]), axis=1)
+        sel["end"] = sel["start"] + sel["ref_length"]
+        closest, overlapping = extract_closest(sel, flank=args.flank, maxdist=maxdist, k=(args.combinations+1), fasta=fasta)
+        logging.info(f"Generating up to {args.combinations} SNP combinations within {maxdist} bp")
+        logging.info(f"{overlapping} instances of overlapping SNPs")
         fasta_comb = ""
-        for id in closest["id"].unique():
-            fa_id = extract_combinations_fasta(closest[closest["id"] == id], flank=args.flank, trim=not args.no_trim)
-            for fa_entry in fa_id.split("\n"):
-                if fa_entry not in fasta_comb:
-                    fasta_comb = f"{fasta_comb}{fa_entry}\n"
-    
+        for id in closest["id"].unique(): 
+            idclosest = concat_overlaps(closest[closest["id"] == id])
+            overlapping = idclosest[(idclosest["pos"] < idclosest["previous_end"].fillna(0))]
+            if overlapping.shape[0] > 0:
+                nonoverlapping_idx = [idx for idx in idclosest.index if idx not in overlapping.index]
+                fa_id = ""
+                for idx in overlapping.index:
+                    comb = generate_nonoverlapping(idclosest.iloc[nonoverlapping_idx + [idx]].sort_values("start"), flank=args.flank, fasta=fasta)
+                    fa_id = fa_id + extract_combinations_fasta(comb, flank=flank)
+            else:
+                fa_id = extract_combinations_fasta(idclosest, flank=args.flank, trim=not args.no_trim)
+            for fa_entry in fa_id.split(">"):
+                header = fa_entry.split("\n")[0]
+                if header not in fasta_comb:
+                    fasta_comb = f"{fasta_comb}>{fa_entry}"
+
         text_file = open(f"{args.outdir}/{args.outname}_combinations.fa", "w")
         text_file.write(fasta_comb)
         text_file.close()

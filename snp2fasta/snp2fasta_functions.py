@@ -10,6 +10,7 @@ def preprocess_snp_table(snp, flank):
     if not set(["chrom", "start", "ref", "alt"]).issubset(snp.columns):
         raise ValueError("""file needs to be tab-delimited and contain 
         at least columns chrom, start, ref, alt""")
+    snp = snp.sort_values(["chrom", "start", "ref", "alt"])
     snp["ref"] = snp["ref"].str.upper()
     snp["alt"] = snp["alt"].str.upper()
     snp["flank_start"] = snp["start"].astype(int)-(flank)
@@ -78,57 +79,72 @@ def series_to_fasta(series, header_cols):
         fasta = fasta + f"{header}_{series[refalt]}\n{series[seq]}\n"
     return fasta
 
-def extract_closest(df, flank, maxdist, k):
+def extract_closest(df, flank, maxdist, k, fasta):
     closest = bioframe.closest(df, df.copy(), k=k, suffixes=["1", "2"], ignore_upstream=True)
     closest = closest[~((closest["distance"] == 0) & 
-                      (closest["start1"] == closest["start2"])) &
+                      (closest["start1"] >= closest["start2"])) &
                       (closest["distance"] < maxdist)].reset_index(drop=True)
+    overlapping = closest[((closest["start1"] + closest["ref_length1"]) > closest["start2"])].shape[0]
+    closest = closest[((closest["start1"] + closest["ref_length1"]) <= closest["start2"])].reset_index(drop=True)
     closest["maxstart"] = closest.groupby(["chrom1", "start1", "ref1", "alt1"])["start2"].transform("max")
     closest["center"] = np.ceil((closest["start1"] + closest["maxstart"])/2).astype(int)
     closest["flank_start"] = closest["center"] - flank
     closest["flank_end"] = closest["center"] + flank
-    return closest
+    closest["seq"] = closest.rename(columns=lambda x: re.sub('1','',x)).apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
+    closest["seq"] = closest["seq"].str.lower()
+    closest["id"] = closest["chrom1"] + "_" + closest["start1"].astype(str) + "_" + closest["ref1"].astype(str) + "_" + closest["alt1"].astype(str)
+    return closest, overlapping
 
-def extract_combinations_fasta(df, flank, trim=True):
+def concat_overlaps(df):
     if len(df["seq"].unique()) > 1:
         raise ValueError("Non-unique sequences in DataFrame")
     df = df.reset_index(drop=True)
     flank_start = df.loc[0,"flank_start"]
-    sequence = df.loc[0, "seq"]
-    df2 = pd.concat([df[["chrom1","start1", "end1", "ref1", "alt1", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('1','',x)), 
-                     df[["chrom2","start2", "end2", "ref2", "alt2", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('2','',x))]).reset_index(drop=True)
+    flank_end = df.loc[0,"flank_end"]
+    df2 = pd.concat([df[["chrom1", "start1", "ref1", "alt1", "ref_length1", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('1','',x)), 
+                     df[["chrom2", "start2", "ref2", "alt2", "ref_length2", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('2','',x))]).reset_index(drop=True)
     df2["pos"] = (df2["start"] - flank_start) - 1
-    df2["ref_length"] = df2.apply(lambda x: len(x["ref"]), axis=1)
-    positions = list(df2["pos"].astype(int))
-    reflengths = list(df2["ref_length"])
     df2["coord"] = df2["chrom"] + "_" + df2["start"].astype(str)
-    coords = list(df2["coord"])  
-    length = df2.shape[0]
+    df2["previous_end"] = df2['pos'].shift(1) + df2['ref_length'].shift(1)
+    return df2
+
+def generate_nonoverlapping(df, flank, fasta):
+    df = df.reset_index(drop=True)
+    df["previous_end"] = df['pos'].shift(1) + df['ref_length'].shift(1)
+    df = df[~(df["pos"] < df["previous_end"].fillna(0))]
+    df["flank_start"] = np.ceil((min(df["start"]) + max(df["start"]))/2).astype(int) - flank
+    df["flank_end"] = np.ceil((min(df["start"]) + max(df["start"]))/2).astype(int) + flank
+    df["seq"] = df.rename(columns=lambda x: re.sub('1','',x)).apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
+    df["seq"] = df["seq"].str.lower()
+    return df
+
+def extract_combinations_fasta(df, flank, trim=True):
+    if len(df["seq"].unique()) > 1:
+        raise ValueError("Non-unique sequences in DataFrame")
+    sequence = df.loc[0, "seq"]
+    positions = list(df["pos"].astype(int))
+    reflengths = list(df["ref_length"])
+    coords = list(df["coord"])  
+    length = df.shape[0]
     insertion = 0
     if trim:
-        df2["alt_length"] = df2.apply(lambda x: len(x["alt"]), axis=1)
-        sum_indels = int(np.ceil(np.array(df2["alt_length"] - df2["ref_length"]).sum()/2))
-        insertion = sum_indels if sum_indels > 0 else 0
+        df["alt_length"] = df.apply(lambda x: len(x["alt"]), axis=1)
+        indels = np.array(df["alt_length"] - df["ref_length"])
+        insertion = int(np.ceil(indels[indels>=0].sum()/2))
     sequences = ""
-    allele_combinations = itertools.product(*[df2[["ref", "alt"]].iloc[i].tolist() for i in range(length)])
+    allele_combinations = itertools.product(*[df[["ref", "alt"]].iloc[i].tolist() for i in range(length)])
     for rep in allele_combinations:
         sequence_mod = sequence
         header = ">"
-        skip = False
         for i in range(length):
             pos = positions[i]
+            if (i > 0) and (pos < positions[(i-1)]+reflengths[(i-1)]):
+                print(pos)
+                raise ValueError("Overlapping SNPs should not occur")
             pos = pos + (len(sequence_mod)-2*flank)
-            if (i > 0) and (pos < positions[(i-1)]+reflengths[(i-i)]):
-                overlap = "_".join(df2.loc[(i-1), ["chrom", "start", "ref", "alt"]].astype(str))
-                overlap_with = "_".join(df2.loc[(i), ["chrom", "start", "ref", "alt"]].astype(str))
-                print(rep)
-                logging.info(f"Deletion for entry {overlap} overlaps with {overlap_with}, skipping combination")
-                skip = True
-                break
             sequence_mod = replace_str(sequence_mod, pos, reflengths[i], rep[i])
             header = header + "_" + coords[i] + "_" + rep[i]
-        if not skip:
-            header = header.replace(">_", ">")
-            sequence_mod = sequence_mod[insertion:len(sequence_mod)-insertion]
-            sequences =  sequences + f"{header}\n{sequence_mod}\n"
+        header = header.replace(">_", ">")
+        sequence_mod = sequence_mod[insertion:len(sequence_mod)-insertion]
+        sequences =  sequences + f"{header}\n{sequence_mod}\n"
     return sequences

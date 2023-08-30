@@ -18,6 +18,8 @@ By default, character "-" is treated as deletion. Can be changed with `--ignore_
 
 By default, both ends of ref and alt are trimmed for insertions so that the length does not exceed 2*flank. Can be unset with `--no_trim`
 
+Experimental function (still yields some missed combinations):
+
 Combinations of SNPs within the flanking distance can be generated using `--combinations k` where `k` is the maximum number of combinations allowed. This will flank around the center of all nearby SNPs and generate all combinations in a separate file. Set maximum distance using `--maxdist`.
 
 ## Example inputs and output
