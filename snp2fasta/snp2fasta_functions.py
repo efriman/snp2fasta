@@ -84,7 +84,7 @@ def extract_closest(df, flank, maxdist, k, fasta):
     closest = closest[~((closest["distance"] == 0) & 
                       (closest["start1"] >= closest["start2"])) &
                       (closest["distance"] < maxdist)].reset_index(drop=True)
-    overlapping = closest[((closest["start1"] + closest["ref_length1"]) > closest["start2"])].shape[0]
+    overlapping = closest.loc[((closest["start1"] + closest["ref_length1"]) > closest["start2"]), ["start1", "start2"]].drop_duplicates()
     closest = closest[((closest["start1"] + closest["ref_length1"]) <= closest["start2"])].reset_index(drop=True)
     closest["maxstart"] = closest.groupby(["chrom1", "start1", "ref1", "alt1"])["start2"].transform("max")
     closest["center"] = np.ceil((closest["start1"] + closest["maxstart"])/2).astype(int)
@@ -109,17 +109,40 @@ def concat_overlaps(df):
     df2["coord"] = df2["chrom"] + "_" + df2["start"].astype(str)
     return df2
 
-def generate_nonoverlapping(df, flank, fasta):
-    assert(set(['chrom','start', 'ref', 'alt']).issubset(df.columns))
-    assert(df.shape[0] > 1)
+def generate_combination_seq(df, flank, fasta):
+    assert set(['chrom','start', 'ref', 'alt']).issubset(df.columns)
+    assert df.shape[0] > 1
     df = df.sort_values(["chrom", "start", "ref", "alt"]).reset_index(drop=True)
     df["previous_end"] = df['pos'].shift(1) + df['ref_length'].shift(1) - 1
-    df = df[~(df["pos"] <= df["previous_end"].fillna(0))]
+    assert df[(df["pos"] <= df["previous_end"].fillna(0))].shape[0] == 0
     df["flank_start"] = np.ceil((min(df["start"]) + max(df["start"]))/2).astype(int) - flank
     df["flank_end"] = np.ceil((min(df["start"]) + max(df["start"]))/2).astype(int) + flank
     df["seq"] = df.apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
     df["seq"] = df["seq"].str.lower()
     return df
+
+def check_if_entry_part_of_list(checkfor, list_of_lists):
+    assert isinstance(checkfor, list)
+    assert isinstance(list_of_lists, list)
+    for list_entry in list_of_lists:
+        for comb in itertools.combinations(list_entry, len(checkfor)):
+            if tuple(checkfor) == comb:
+                return True
+    return False
+
+def generate_nonoverlapping_indices(df):
+    index_combs = list()
+    for i in reversed(range(2, len(df.index))):
+        for combs in itertools.combinations(df.index, r=i):
+            df2 = df.iloc[list(combs)].copy()
+            df2["previous_end"] = df2["start"].shift(1) + df2["ref_length"].shift(1) - 1
+            df2["exclude"] = np.where(df2["start"] <= df2["previous_end"].fillna(0),
+                                     True,
+                                     False)
+            if not df2.exclude.any():
+                if not check_if_entry_part_of_list(list(df2.index), index_combs):
+                    index_combs = index_combs + [list(tuple(df2.index))]
+    return index_combs
 
 def extract_combinations_fasta(df, flank, trim=True):
     if len(df["seq"].unique()) > 1:

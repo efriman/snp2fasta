@@ -138,17 +138,18 @@ def main():
         sel["end"] = sel["start"] + sel["ref_length"]
         closest, overlapping = extract_closest(sel, flank=args.flank, maxdist=maxdist, k=(args.combinations+1), fasta=fasta)
         logging.info(f"Generating up to {args.combinations} SNP combinations within {maxdist} bp")
-        logging.info(f"{overlapping} instances of overlapping SNPs")
+        if overlapping.shape[0] > 0:
+            logging.info(f"{overlapping.shape[0]} instances of overlapping SNPs:")
+            logging.info(f"{overlapping}")
         fasta_comb = ""
         for id in closest["id"].unique(): 
             idclosest = concat_overlaps(closest[closest["id"] == id])
-            overlapping = idclosest[(idclosest["pos"] < idclosest["previous_end"].fillna(0))]
-            if overlapping.shape[0] > 0:
-                nonoverlapping_idx = [idx for idx in idclosest.index if idx not in overlapping.index]
+            if idclosest[(idclosest["pos"] < idclosest["previous_end"].fillna(0))].shape[0] > 0:
+                index_combs = generate_nonoverlapping_indices(idclosest)
                 fa_id = ""
-                for idx in overlapping.index:
-                    comb = generate_nonoverlapping(idclosest.iloc[nonoverlapping_idx + [idx]].sort_values("start"), flank=args.flank, fasta=fasta)
-                    fa_id = fa_id + extract_combinations_fasta(comb, flank=flank, trim=not args.no_trim)
+                for idx in index_combs:
+                    combs = generate_combination_seq(idclosest.iloc[idx], flank=flank, fasta=fasta)
+                    fa_id = fa_id + extract_combinations_fasta(combs, flank=flank, trim=not args.no_trim)
             else:
                 fa_id = extract_combinations_fasta(idclosest, flank=args.flank, trim=not args.no_trim)
             for fa_entry in fa_id.split(">"):
