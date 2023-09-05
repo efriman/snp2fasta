@@ -22,13 +22,16 @@ Combinations of SNPs can be generated using `--combinations k` where `k` is the 
 ## Example inputs and output
 `snp2fasta input_table.txt --flank 5 --fasta reference_genome.fa --outname test --combinations 2 --maxdist 10`
 
-`input_table.bed`
+input_table.bed
+
 | chrom  | start | ref | alt |
 | ------------- | ------------- | ------------- |  ------------- |
 | chr1  | 6  | A | G |
 | chr2  | 11  | C | T |
 
-`test_matched.fa`
+
+test_matched.fa
+
 \>chr1_6_A
 
 atgatAtagcc
@@ -46,7 +49,8 @@ atagcCgtacg
 atagcTgtacg
 
 
-`test_combinations.fa`
+test_combinations.fa
+
 \>chr1_6_A_chr1_11_C
 
 atAtagcCgt
