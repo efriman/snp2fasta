@@ -13,7 +13,7 @@ Requires pysam, which in some cases may need to be installed separately using `c
 ## Usage
 `snp2fasta input_table.txt --flank [INTEGER] --fasta reference_genome.fa --outname output [OPTIONS]`
 
-By default, character "-" is treated as deletion. Can be changed with `--ignore_char`
+By default, character `-` is treated as deletion. Can be changed with `--ignore_char`
 
 By default, both ends of ref and alt are trimmed for insertions so that the length does not exceed 2*flank. Can be changed by specifying `--no_trim`
 
@@ -31,36 +31,22 @@ input_table.bed
 test_matched.fa
 
 \>chr1_6_A
-
 atgatAtagcc
-
 \>chr1_6_G
-
 atgatGtagcc
-
 \>chr2_11_C
-
 atagcCgtacg
-
 \>chr2_11_T
-
 atagcTgtacg
 
 
 test_combinations.fa
 
 \>chr1_6_A_chr1_11_C
-
 atAtagcCgt
-
 \>chr1_6_G_chr1_11_C
-
 atGtagcCgt
-
 \>chr1_6_A_chr1_11_T
-
 atAtagcTgt
-
 \>chr1_6_G_chr1_11_T
-
 atGtagcTgt
