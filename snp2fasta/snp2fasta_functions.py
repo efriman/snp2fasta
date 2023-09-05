@@ -34,17 +34,17 @@ def slice_str(string, start, end):
 
 def process_snp_fasta_table(data, ignore_char="-"):
     data["seq"] = data["seq"].str.lower()
-    data['ref_pos'] = data.apply(lambda x: slice_str(x["seq"], 
+    data['seq_pos'] = data.apply(lambda x: slice_str(x["seq"], 
                                                      x['snp_pos'], 
                                                      x['snp_pos']+x["ref_length"]), 
                                  axis=1)
     data["alt"] = np.where(data["ref"] == ignore_char,
-                           data['ref_pos'].str.upper() + data['alt'],
+                           data['seq_pos'].str.upper() + data['alt'],
                            data['alt'])
     data["ref"] = np.where(data["ref"] == ignore_char,
-                           data['ref_pos'].str.upper(),
+                           data['seq_pos'].str.upper(),
                            data['ref'])
-    data["ref_mismatch"] = np.where(data["ref"].str.lower() != data["ref_pos"], True, False) 
+    data["ref_mismatch"] = np.where(data["ref"].str.lower() != data["seq_pos"], True, False) 
     return data
 
 def replace_str(string, pos, length, replacewith, ignore_char="-"):
@@ -100,21 +100,24 @@ def concat_overlaps(df):
         raise ValueError("Non-unique sequences in DataFrame")
     df = df.reset_index(drop=True)
     flank_start = df.loc[0,"flank_start"]
-    flank_end = df.loc[0,"flank_end"]
-    df2 = pd.concat([df[["chrom1", "start1", "ref1", "alt1", "ref_length1", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('1','',x)), 
-                     df[["chrom2", "start2", "ref2", "alt2", "ref_length2", "seq"]].drop_duplicates().rename(columns=lambda x: re.sub('2','',x))]).reset_index(drop=True)
+    df2 = pd.concat([df[["chrom1", "start1", "ref1", "alt1", "ref_length1", "seq"]].rename(columns=lambda x: re.sub('1','',x)), 
+                     df[["chrom2", "start2", "ref2", "alt2", "ref_length2", "seq"]].rename(columns=lambda x: re.sub('2','',x)),
+                    ]
+                   ).sort_values(["chrom", "start"]).drop_duplicates().reset_index(drop=True)
     df2["pos"] = (df2["start"] - flank_start) - 1
+    df2["previous_end"] = df2['pos'].shift(1) + df2['ref_length'].shift(1) - 1
     df2["coord"] = df2["chrom"] + "_" + df2["start"].astype(str)
-    df2["previous_end"] = df2['pos'].shift(1) + df2['ref_length'].shift(1)
     return df2
 
 def generate_nonoverlapping(df, flank, fasta):
-    df = df.reset_index(drop=True)
-    df["previous_end"] = df['pos'].shift(1) + df['ref_length'].shift(1)
-    df = df[~(df["pos"] < df["previous_end"].fillna(0))]
+    assert(set(['chrom','start', 'ref', 'alt']).issubset(df.columns))
+    assert(df.shape[0] > 1)
+    df = df.sort_values(["chrom", "start", "ref", "alt"]).reset_index(drop=True)
+    df["previous_end"] = df['pos'].shift(1) + df['ref_length'].shift(1) - 1
+    df = df[~(df["pos"] <= df["previous_end"].fillna(0))]
     df["flank_start"] = np.ceil((min(df["start"]) + max(df["start"]))/2).astype(int) - flank
     df["flank_end"] = np.ceil((min(df["start"]) + max(df["start"]))/2).astype(int) + flank
-    df["seq"] = df.rename(columns=lambda x: re.sub('1','',x)).apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
+    df["seq"] = df.apply(lambda x: fetch_fa_from_bed_series(x, fasta), axis=1)
     df["seq"] = df["seq"].str.lower()
     return df
 
@@ -125,25 +128,24 @@ def extract_combinations_fasta(df, flank, trim=True):
     positions = list(df["pos"].astype(int))
     reflengths = list(df["ref_length"])
     coords = list(df["coord"])  
-    length = df.shape[0]
     insertion = 0
     if trim:
         df["alt_length"] = df.apply(lambda x: len(x["alt"]), axis=1)
         indels = np.array(df["alt_length"] - df["ref_length"])
         insertion = int(np.ceil(indels[indels>=0].sum()/2))
+    entries = df.shape[0]
+    allele_combinations = itertools.product(*[df[["ref", "alt"]].iloc[i].tolist() for i in range(entries)])
     sequences = ""
-    allele_combinations = itertools.product(*[df[["ref", "alt"]].iloc[i].tolist() for i in range(length)])
-    for rep in allele_combinations:
+    for alleles in allele_combinations:
         sequence_mod = sequence
         header = ">"
-        for i in range(length):
+        for i in range(entries):
             pos = positions[i]
             if (i > 0) and (pos < positions[(i-1)]+reflengths[(i-1)]):
-                print(pos)
-                raise ValueError("Overlapping SNPs should not occur")
+                raise ValueError("Overlapping SNPs should not occur at this stage")
             pos = pos + (len(sequence_mod)-2*flank)
-            sequence_mod = replace_str(sequence_mod, pos, reflengths[i], rep[i])
-            header = header + "_" + coords[i] + "_" + rep[i]
+            sequence_mod = replace_str(sequence_mod, pos, reflengths[i], alleles[i])
+            header = header + "_" + coords[i] + "_" + alleles[i]
         header = header.replace(">_", ">")
         sequence_mod = sequence_mod[insertion:len(sequence_mod)-insertion]
         sequences =  sequences + f"{header}\n{sequence_mod}\n"

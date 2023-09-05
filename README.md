@@ -33,7 +33,7 @@ test_matched.fa
 
 \>chr1_1_A
 
-atgataatgat
+atgatAatgat
 
 \>chr1_1_G
 
@@ -41,7 +41,7 @@ atgatGatgat
 
 \>chr2_10_C
 
-ctagccgtacg
+ctagcCgtacg
 
 \>chr2_10_T
 

@@ -148,7 +148,7 @@ def main():
                 fa_id = ""
                 for idx in overlapping.index:
                     comb = generate_nonoverlapping(idclosest.iloc[nonoverlapping_idx + [idx]].sort_values("start"), flank=args.flank, fasta=fasta)
-                    fa_id = fa_id + extract_combinations_fasta(comb, flank=flank)
+                    fa_id = fa_id + extract_combinations_fasta(comb, flank=flank, trim=not args.no_trim)
             else:
                 fa_id = extract_combinations_fasta(idclosest, flank=args.flank, trim=not args.no_trim)
             for fa_entry in fa_id.split(">"):
