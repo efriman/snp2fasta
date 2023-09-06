@@ -84,8 +84,10 @@ def extract_closest(df, flank, maxdist, k, fasta):
     closest = closest[~((closest["distance"] == 0) & 
                       (closest["start1"] >= closest["start2"])) &
                       (closest["distance"] < maxdist)].reset_index(drop=True)
-    overlapping = closest.loc[((closest["start1"] + closest["ref_length1"]) > closest["start2"]), ["start1", "start2"]].drop_duplicates()
-    closest = closest[((closest["start1"] + closest["ref_length1"]) <= closest["start2"])].reset_index(drop=True)
+    overlapping = closest.loc[((closest["start1"] + closest["ref_length1"]) > closest["start2"]) |
+                              (closest["start1"] == closest["start2"]) , ["start1", "start2"]]
+    closest = closest.iloc[[idx for idx in list(closest.index) if idx not in list(overlapping.index)]]
+    overlapping = overlapping.drop_duplicates().reset_index(drop=True)
     closest["maxstart"] = closest.groupby(["chrom1", "start1", "ref1", "alt1"])["start2"].transform("max")
     closest["center"] = np.ceil((closest["start1"] + closest["maxstart"])/2).astype(int)
     closest["flank_start"] = closest["center"] - flank

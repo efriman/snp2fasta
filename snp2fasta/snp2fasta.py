@@ -144,7 +144,9 @@ def main():
         fasta_comb = ""
         for id in closest["id"].unique(): 
             idclosest = concat_overlaps(closest[closest["id"] == id])
-            if idclosest[(idclosest["pos"] < idclosest["previous_end"].fillna(0))].shape[0] > 0:
+            overlap_or_same = idclosest[(idclosest["pos"] <= idclosest["previous_end"].fillna(0)) |
+                                        (idclosest["start"] == idclosest["start"].shift(1))]
+            if overlap_or_same.shape[0] > 0:
                 index_combs = generate_nonoverlapping_indices(idclosest)
                 fa_id = ""
                 for idx in index_combs:
