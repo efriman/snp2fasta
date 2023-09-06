@@ -7,7 +7,7 @@ import warnings
 logging.basicConfig(format="%(message)s", level="INFO")
 
 
-def parse_args_overlap_peaks():
+def parse_args_snp2fasta():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
@@ -72,7 +72,7 @@ def parse_args_overlap_peaks():
     return parser
     
 def main():
-    parser = parse_args_overlap_peaks()
+    parser = parse_args_snp2fasta()
     args = parser.parse_args()
 
     logging.debug(args)
