@@ -156,7 +156,7 @@ def main():
                 fa_id = extract_combinations_fasta(idclosest, flank=args.flank, trim=not args.no_trim)
             for fa_entry in fa_id.split(">"):
                 header = fa_entry.split("\n")[0]
-                if header not in fasta_comb:
+                if f"{header}\n" not in fasta_comb and header != "":
                     fasta_comb = f"{fasta_comb}>{fa_entry}"
 
         text_file = open(f"{args.outdir}/{args.outname}_combinations.fa", "w")
