@@ -14,9 +14,9 @@ def preprocess_snp_table(snp, flank):
     snp["ref"] = snp["ref"].str.upper()
     snp["alt"] = snp["alt"].str.upper()
     snp["flank_start"] = snp["start"].astype(int)-(flank) - 1
-    snp["flank_end"] = snp["start"].astype(int)+(flank)
     snp["snp_pos"] = (snp["start"] - snp["flank_start"]) - 1
     snp["ref_length"] = snp.apply(lambda x: len(x["ref"]), axis=1)
+    snp["flank_end"] = snp["start"].astype(int)+(flank) + snp["ref_length"] - 1
     return snp
 
 def fetch_fa_from_bed_series(series, pysam_fa):

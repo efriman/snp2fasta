@@ -123,7 +123,7 @@ def main():
         snp_match[['seq', 'seq_alt']] = snp_match.apply(lambda x: trim_strings(x["seq"], x['seq_alt'], (flank*2)+1), axis=1, result_type="expand")
         
     if args.bed_out:
-        snp_match[["chrom", "start", "ref", "alt", "seq", "seq_alt"]].rename(columns={"seq": "seq_ref"}).to_csv(f"{args.outdir}/{args.outname}_matched.bed", 
+        snp_match[["chrom", "start", "rsID", "ref", "alt", "seq", "seq_alt"]].rename(columns={"seq": "seq_ref"}).to_csv(f"{args.outdir}/{args.outname}_matched.bed", 
                                                                                                                 index=False, sep="\t")
         logging.info(f"Saved {args.outdir}/{args.outname}_matched.bed")
     
